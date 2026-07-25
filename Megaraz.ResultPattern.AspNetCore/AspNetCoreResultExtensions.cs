@@ -7,6 +7,10 @@ namespace Megaraz.ResultPattern.AspNetCore;
 public static class AspNetCoreResultExtensions
 {
     /// <summary>Maps a typed result to an <see cref="ActionResult{TValue}"/>.</summary>
+    /// <param name="controller">The MVC controller creating the response.</param>
+    /// <param name="result">The result to map.</param>
+    /// <param name="policy">The HTTP mapping policy, or <see langword="null"/> for the default policy.</param>
+    /// <returns>An MVC action result.</returns>
     public static ActionResult<TValue> ToActionResult<TValue>(
         this ControllerBase controller,
         Result<TValue> result,
@@ -20,6 +24,10 @@ public static class AspNetCoreResultExtensions
     }
 
     /// <summary>Maps a result to an <see cref="IActionResult"/>.</summary>
+    /// <param name="controller">The MVC controller creating the response.</param>
+    /// <param name="result">The result to map.</param>
+    /// <param name="policy">The HTTP mapping policy, or <see langword="null"/> for the default policy.</param>
+    /// <returns>An MVC action result.</returns>
     public static IActionResult ToActionResult(
         this ControllerBase controller,
         Result result,
@@ -32,6 +40,10 @@ public static class AspNetCoreResultExtensions
     }
 
     /// <summary>Maps a result to a 204 No Content response on success.</summary>
+    /// <param name="controller">The MVC controller creating the response.</param>
+    /// <param name="result">The result to map.</param>
+    /// <param name="policy">The HTTP mapping policy, or <see langword="null"/> for the default policy.</param>
+    /// <returns>An MVC action result.</returns>
     public static IActionResult ToNoContentResult(
         this ControllerBase controller,
         Result result,

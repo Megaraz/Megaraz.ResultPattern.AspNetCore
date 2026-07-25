@@ -30,6 +30,7 @@ public sealed record PaginationParameters
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown when <paramref name="maxPageSize"/> is less than 1.
     /// </exception>
+    /// <returns>Normalized, immutable pagination parameters.</returns>
     public static PaginationParameters Normalize(int pageNumber, int pageSize, int maxPageSize)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxPageSize, 1);

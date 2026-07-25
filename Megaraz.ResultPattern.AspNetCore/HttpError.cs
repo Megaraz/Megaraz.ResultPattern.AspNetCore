@@ -90,6 +90,12 @@ public sealed record HttpError : Error
     }
 
     /// <summary>Creates a caller-defined HTTP error.</summary>
+    /// <param name="errorContext">The operation and entity context for the error code.</param>
+    /// <param name="customDescriptionSuffix">Technical detail describing the failure.</param>
+    /// <param name="userMessage">Optional application-owned message safe for clients.</param>
+    /// <param name="messageFactory">Optional application-owned description factory.</param>
+    /// <param name="exception">The underlying exception, when available.</param>
+    /// <returns>A caller-defined HTTP error.</returns>
     public static HttpError Custom(
         ErrorContext errorContext,
         string customDescriptionSuffix,
@@ -100,6 +106,11 @@ public sealed record HttpError : Error
             messageFactory, exception);
 
     /// <summary>Creates an error for a transport failure.</summary>
+    /// <param name="errorContext">The operation and entity context for the error code.</param>
+    /// <param name="exception">The underlying transport exception, when available.</param>
+    /// <param name="userMessage">Optional application-owned message safe for clients.</param>
+    /// <param name="messageFactory">Optional application-owned description factory.</param>
+    /// <returns>A transport-failure error.</returns>
     public static HttpError TransportFailure(
         ErrorContext errorContext,
         Exception? exception = null,
@@ -109,6 +120,10 @@ public sealed record HttpError : Error
             "The external service could not be reached.", userMessage, messageFactory, exception);
 
     /// <summary>Creates an error for an HTTP 429 response.</summary>
+    /// <param name="errorContext">The operation and entity context for the error code.</param>
+    /// <param name="userMessage">Optional application-owned message safe for clients.</param>
+    /// <param name="messageFactory">Optional application-owned description factory.</param>
+    /// <returns>A rate-limit error.</returns>
     public static HttpError TooManyRequests(
         ErrorContext errorContext,
         string? userMessage = null,
@@ -117,6 +132,12 @@ public sealed record HttpError : Error
             "Too Many Requests", userMessage, messageFactory);
 
     /// <summary>Creates an error for an invalid response body.</summary>
+    /// <param name="errorContext">The operation and entity context for the error code.</param>
+    /// <param name="exception">The parsing exception, when available.</param>
+    /// <param name="detail">Technical detail describing the malformed response.</param>
+    /// <param name="userMessage">Optional application-owned message safe for clients.</param>
+    /// <param name="messageFactory">Optional application-owned description factory.</param>
+    /// <returns>A malformed-response error.</returns>
     public static HttpError MalformedResponse(
         ErrorContext errorContext,
         Exception? exception = null,
@@ -128,6 +149,11 @@ public sealed record HttpError : Error
             userMessage, messageFactory, exception);
 
     /// <summary>Creates an error for an unexpected HTTP status code.</summary>
+    /// <param name="errorContext">The operation and entity context for the error code.</param>
+    /// <param name="statusCode">The unexpected status code returned by the service.</param>
+    /// <param name="userMessage">Optional application-owned message safe for clients.</param>
+    /// <param name="messageFactory">Optional application-owned description factory.</param>
+    /// <returns>An unexpected-status error.</returns>
     public static HttpError UnexpectedStatusCode(
         ErrorContext errorContext,
         HttpStatusCode statusCode,
@@ -140,6 +166,10 @@ public sealed record HttpError : Error
     }
 
     /// <summary>Creates an error for an HTTP 422 response.</summary>
+    /// <param name="errorContext">The operation and entity context for the error code.</param>
+    /// <param name="userMessage">Optional application-owned message safe for clients.</param>
+    /// <param name="messageFactory">Optional application-owned description factory.</param>
+    /// <returns>An unprocessable-content error.</returns>
     public static HttpError UnprocessableContent(
         ErrorContext errorContext,
         string? userMessage = null,
@@ -148,6 +178,10 @@ public sealed record HttpError : Error
             "Unprocessable Content", userMessage, messageFactory);
 
     /// <summary>Creates an error for an HTTP 400 response.</summary>
+    /// <param name="errorContext">The operation and entity context for the error code.</param>
+    /// <param name="userMessage">Optional application-owned message safe for clients.</param>
+    /// <param name="messageFactory">Optional application-owned description factory.</param>
+    /// <returns>A bad-request error.</returns>
     public static HttpError BadRequest(
         ErrorContext errorContext,
         string? userMessage = null,
@@ -156,6 +190,10 @@ public sealed record HttpError : Error
             userMessage, messageFactory);
 
     /// <summary>Creates an error for an HTTP 401 response.</summary>
+    /// <param name="errorContext">The operation and entity context for the error code.</param>
+    /// <param name="userMessage">Optional application-owned message safe for clients.</param>
+    /// <param name="messageFactory">Optional application-owned description factory.</param>
+    /// <returns>An unauthorized error.</returns>
     public static HttpError UnauthorizedAccess(
         ErrorContext errorContext,
         string? userMessage = null,
@@ -164,6 +202,10 @@ public sealed record HttpError : Error
             userMessage, messageFactory);
 
     /// <summary>Creates an error for an HTTP 403 response.</summary>
+    /// <param name="errorContext">The operation and entity context for the error code.</param>
+    /// <param name="userMessage">Optional application-owned message safe for clients.</param>
+    /// <param name="messageFactory">Optional application-owned description factory.</param>
+    /// <returns>A forbidden error.</returns>
     public static new HttpError Forbidden(
         ErrorContext errorContext,
         string? userMessage = null,
@@ -172,6 +214,10 @@ public sealed record HttpError : Error
             userMessage, messageFactory);
 
     /// <summary>Creates an error for an HTTP 404 response.</summary>
+    /// <param name="errorContext">The operation and entity context for the error code.</param>
+    /// <param name="userMessage">Optional application-owned message safe for clients.</param>
+    /// <param name="messageFactory">Optional application-owned description factory.</param>
+    /// <returns>A not-found error.</returns>
     public static new HttpError NotFound(
         ErrorContext errorContext,
         string? userMessage = null,
@@ -180,6 +226,10 @@ public sealed record HttpError : Error
             userMessage, messageFactory);
 
     /// <summary>Creates an error for an HTTP 409 response.</summary>
+    /// <param name="errorContext">The operation and entity context for the error code.</param>
+    /// <param name="userMessage">Optional application-owned message safe for clients.</param>
+    /// <param name="messageFactory">Optional application-owned description factory.</param>
+    /// <returns>A conflict error.</returns>
     public static new HttpError Conflict(
         ErrorContext errorContext,
         string? userMessage = null,
@@ -188,6 +238,10 @@ public sealed record HttpError : Error
             userMessage, messageFactory);
 
     /// <summary>Creates an error for an HTTP 500 response.</summary>
+    /// <param name="errorContext">The operation and entity context for the error code.</param>
+    /// <param name="userMessage">Optional application-owned message safe for clients.</param>
+    /// <param name="messageFactory">Optional application-owned description factory.</param>
+    /// <returns>An internal-server-error error.</returns>
     public static HttpError InternalServerError(
         ErrorContext errorContext,
         string? userMessage = null,

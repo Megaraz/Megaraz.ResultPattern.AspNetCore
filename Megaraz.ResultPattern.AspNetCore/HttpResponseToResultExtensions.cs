@@ -12,6 +12,10 @@ public static class HttpResponseToResultExtensions
         new(JsonSerializerDefaults.Web);
 
     /// <summary>Maps a successful JSON response or an HTTP failure to a typed result.</summary>
+    /// <param name="response">The response to consume, or <see langword="null"/> for a transport failure.</param>
+    /// <param name="errorContext">The operation and entity context for generated errors.</param>
+    /// <param name="ct">The token used to cancel response-body consumption.</param>
+    /// <returns>A typed result containing the deserialized value or an HTTP error.</returns>
     public static Task<Result<TValue>> MapToResultAsync<TValue>(
         this HttpResponseMessage? response,
         ErrorContext errorContext,
@@ -20,6 +24,11 @@ public static class HttpResponseToResultExtensions
         MapToResultAsync<TValue>(response, errorContext, HttpResponseMappingOptions.Default, ct);
 
     /// <summary>Maps a response using configured serialization and upstream-message options.</summary>
+    /// <param name="response">The response to consume, or <see langword="null"/> for a transport failure.</param>
+    /// <param name="errorContext">The operation and entity context for generated errors.</param>
+    /// <param name="options">The serialization, body-limit, and message-extraction options.</param>
+    /// <param name="ct">The token used to cancel response-body consumption.</param>
+    /// <returns>A typed result containing the deserialized value or an HTTP error.</returns>
     public static async Task<Result<TValue>> MapToResultAsync<TValue>(
         this HttpResponseMessage? response,
         ErrorContext errorContext,
@@ -98,6 +107,12 @@ public static class HttpResponseToResultExtensions
     /// <remarks>
     /// The deserializer owns the response stream and must dispose it. The response content is consumed.
     /// </remarks>
+    /// <param name="response">The response to consume, or <see langword="null"/> for a transport failure.</param>
+    /// <param name="errorContext">The operation and entity context for generated errors.</param>
+    /// <param name="deserializeAsync">The application-owned stream deserializer.</param>
+    /// <param name="options">The upstream-message options, or <see langword="null"/> for defaults.</param>
+    /// <param name="ct">The token used to cancel response-body consumption.</param>
+    /// <returns>A typed result containing the deserialized value or an HTTP error.</returns>
     public static async Task<Result<TValue>> MapToResultWithDeserializerAsync<TValue>(
         this HttpResponseMessage? response,
         ErrorContext errorContext,
@@ -150,6 +165,10 @@ public static class HttpResponseToResultExtensions
     }
 
     /// <summary>Maps a successful response or an HTTP failure to a non-generic result.</summary>
+    /// <param name="response">The response to consume, or <see langword="null"/> for a transport failure.</param>
+    /// <param name="errorContext">The operation and entity context for generated errors.</param>
+    /// <param name="ct">The token used to cancel response-body consumption.</param>
+    /// <returns>A result indicating success or the mapped HTTP error.</returns>
     public static Task<Result> MapToResultAsync(
         this HttpResponseMessage? response,
         ErrorContext errorContext,
@@ -157,6 +176,11 @@ public static class HttpResponseToResultExtensions
         MapToResultAsync(response, errorContext, HttpResponseMappingOptions.Default, ct);
 
     /// <summary>Maps a response using configured upstream-message options.</summary>
+    /// <param name="response">The response to consume, or <see langword="null"/> for a transport failure.</param>
+    /// <param name="errorContext">The operation and entity context for generated errors.</param>
+    /// <param name="options">The upstream-message options.</param>
+    /// <param name="ct">The token used to cancel response-body consumption.</param>
+    /// <returns>A result indicating success or the mapped HTTP error.</returns>
     public static async Task<Result> MapToResultAsync(
         this HttpResponseMessage? response,
         ErrorContext errorContext,
@@ -183,6 +207,10 @@ public static class HttpResponseToResultExtensions
     /// Call this in the catch block around <see cref="HttpClient"/> calls. Caller cancellation is
     /// never converted to a failure; pass the caller token so cancellation can be rethrown.
     /// </remarks>
+    /// <param name="exception">The transport exception to map.</param>
+    /// <param name="errorContext">The operation and entity context for the generated error.</param>
+    /// <param name="callerCancellationToken">The caller token used to distinguish cancellation.</param>
+    /// <returns>A failed result containing a transport error.</returns>
     public static Result<TValue> MapTransportExceptionToResult<TValue>(
         this Exception exception,
         ErrorContext errorContext,
@@ -208,6 +236,10 @@ public static class HttpResponseToResultExtensions
     }
 
     /// <summary>Converts an HTTP request or timeout exception into a transport failure result.</summary>
+    /// <param name="exception">The transport exception to map.</param>
+    /// <param name="errorContext">The operation and entity context for the generated error.</param>
+    /// <param name="callerCancellationToken">The caller token used to distinguish cancellation.</param>
+    /// <returns>A failed result containing a transport error.</returns>
     public static Result MapTransportExceptionToResult(
         this Exception exception,
         ErrorContext errorContext,

@@ -7,6 +7,9 @@ namespace Megaraz.ResultPattern.AspNetCore;
 public static class MinimalApiResultExtensions
 {
     /// <summary>Maps a typed result to a minimal API HTTP result.</summary>
+    /// <param name="result">The result to map.</param>
+    /// <param name="policy">The HTTP mapping policy, or <see langword="null"/> for the default policy.</param>
+    /// <returns>An ASP.NET Core minimal API result.</returns>
     public static IResult ToHttpResult<TValue>(
         this Result<TValue> result,
         HttpResultMappingPolicy? policy = null)
@@ -17,6 +20,9 @@ public static class MinimalApiResultExtensions
     }
 
     /// <summary>Maps a result to a minimal API HTTP result.</summary>
+    /// <param name="result">The result to map.</param>
+    /// <param name="policy">The HTTP mapping policy, or <see langword="null"/> for the default policy.</param>
+    /// <returns>An ASP.NET Core minimal API result.</returns>
     public static IResult ToHttpResult(
         this Result result,
         HttpResultMappingPolicy? policy = null)
@@ -26,6 +32,9 @@ public static class MinimalApiResultExtensions
     }
 
     /// <summary>Maps a result to a 204 No Content result on success.</summary>
+    /// <param name="result">The result to map.</param>
+    /// <param name="policy">The HTTP mapping policy, or <see langword="null"/> for the default policy.</param>
+    /// <returns>An ASP.NET Core minimal API result.</returns>
     public static IResult ToNoContentHttpResult(
         this Result result,
         HttpResultMappingPolicy? policy = null)

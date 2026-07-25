@@ -11,6 +11,9 @@ public static class HttpResultMapper
     /// Maps a successful <see cref="Result{TValue}"/> to 200 OK with the value as the body,
     /// or maps a failure to the appropriate HTTP error response.
     /// </summary>
+    /// <param name="result">The result to map.</param>
+    /// <param name="policy">The HTTP mapping policy, or <see langword="null"/> for the default policy.</param>
+    /// <returns>A framework-agnostic response descriptor.</returns>
     public static MappedHttpResponse ToHttpResponse<TValue>(
         Result<TValue> result,
         HttpResultMappingPolicy? policy = null)
@@ -28,6 +31,9 @@ public static class HttpResultMapper
     /// Maps a successful <see cref="Result"/> to 200 OK (no body),
     /// or maps a failure to the appropriate HTTP error response.
     /// </summary>
+    /// <param name="result">The result to map.</param>
+    /// <param name="policy">The HTTP mapping policy, or <see langword="null"/> for the default policy.</param>
+    /// <returns>A framework-agnostic response descriptor.</returns>
     public static MappedHttpResponse ToHttpResponse(
         Result result,
         HttpResultMappingPolicy? policy = null)
@@ -44,6 +50,9 @@ public static class HttpResultMapper
     /// Maps a successful <see cref="Result"/> to 204 No Content,
     /// or maps a failure to the appropriate HTTP error response.
     /// </summary>
+    /// <param name="result">The result to map.</param>
+    /// <param name="policy">The HTTP mapping policy, or <see langword="null"/> for the default policy.</param>
+    /// <returns>A framework-agnostic response descriptor.</returns>
     public static MappedHttpResponse ToNoContentResponse(
         Result result,
         HttpResultMappingPolicy? policy = null)
@@ -60,6 +69,10 @@ public static class HttpResultMapper
     /// Maps a successful <see cref="Result{TValue}"/> to 201 Created with the value as the body
     /// and an optional location, or maps a failure to the appropriate HTTP error response.
     /// </summary>
+    /// <param name="result">The result to map.</param>
+    /// <param name="location">The URI of the created resource, when available.</param>
+    /// <param name="policy">The HTTP mapping policy, or <see langword="null"/> for the default policy.</param>
+    /// <returns>A framework-agnostic response descriptor.</returns>
     public static MappedHttpResponse ToCreatedResponse<TValue>(
         Result<TValue> result,
         string? location = null,

@@ -1,28 +1,89 @@
 # Megaraz.ResultPattern.AspNetCore
 
-ASP.NET Core and HTTP extensions for
+HTTP and ASP.NET Core extensions for
 [`Megaraz.ResultPattern`](https://github.com/Megaraz/Megaraz.ResultPattern).
+The package maps core results to predictable HTTP response descriptors and
+provides optional MVC and minimal-API adapters.
 
-## HTTP response mapping
+The framework-agnostic mapper does not create endpoints, choose application
+messages, or impose a remote service's error schema. Applications own routing,
+authentication, localization, and any public API contract that differs from
+the documented defaults.
 
-Map a domain result to a framework-agnostic response descriptor:
+## Supported frameworks
+
+- .NET 8
+- .NET 9
+- .NET 10
+
+## Installation
+
+```bash
+dotnet add package Megaraz.ResultPattern.AspNetCore
+```
+
+## Mapping outbound results
+
+Use the pure mapper when the application needs to control how the response is
+written:
 
 ```csharp
 var response = HttpResultMapper.ToHttpResponse(result);
-return Results.Json(response.Body, statusCode: response.StatusCode);
+return Results.Json(
+    response.Body,
+    statusCode: response.StatusCode,
+    headers: response.Location is null
+        ? null
+        : new HeaderDictionary { ["Location"] = response.Location });
 ```
 
-### Stable response contract
+Successful typed results use `200 OK` and place the value in the body.
+Successful non-generic results use `200 OK` without a body. Created results use
+`201 Created` and preserve an optional `Location` header. Commands can use
+`ToNoContentResponse` for `204 No Content`.
 
-The default mapper keeps success payloads application-defined. A successful
-`Result<T>` returns the value as the response body; a successful non-generic
-`Result` has no body. Created responses use `201 Created` and include the
-`Location` header when a location is supplied.
+### Minimal APIs
 
-Default failure bodies are immutable DTOs with camel-case JSON names. Every
-failure includes a safe `message` and a machine-readable `code`. Codes are
-public API identifiers: applications should version them deliberately and
-avoid changing a code's meaning after publishing it.
+```csharp
+app.MapGet("/accounts/{id}", (Guid id) =>
+{
+    Result<Account> result = service.Get(id);
+    return result.ToHttpResult();
+});
+
+app.MapPost("/accounts", (CreateAccount request) =>
+{
+    Result<Account> result = service.Create(request);
+    return result.ToCreatedHttpResult($"/accounts/{result.Value.Id}");
+});
+```
+
+Use `ToNoContentHttpResult` for successful commands. These adapters write the
+status, body, and `Location` header while preserving the default failure body.
+
+### MVC controllers
+
+```csharp
+[HttpGet("{id}")]
+public ActionResult<Account> Get(Guid id)
+{
+    Result<Account> result = service.Get(id);
+    return this.ToActionResult(result);
+}
+
+[HttpPost]
+public ActionResult<Account> Create(CreateAccount request)
+{
+    Result<Account> result = service.Create(request);
+    return this.ToCreatedResult(result, $"/accounts/{result.Value.Id}");
+}
+```
+
+## Default response contract
+
+Failure responses use immutable DTOs with camel-case JSON names. Codes are
+machine-readable public API identifiers; applications should version them
+deliberately and avoid changing a code's meaning after publishing.
 
 Non-validation failure:
 
@@ -52,49 +113,14 @@ Validation failure:
 }
 ```
 
-`validationErrors` is always a materialized list for validation responses and
-is omitted for other failures. `MappedHttpResponse.Body` is intentionally
-`object?` because success values and custom policy body factories may use
-application-specific DTOs. Use the default failure body factory when this
-contract is required; replacing it transfers response-shape compatibility to
-the application.
+`validationErrors` is a materialized list and is omitted for other failures.
+`MappedHttpResponse.Body` remains `object?` because successful values and custom
+failure factories may use application-defined DTOs.
 
-## ASP.NET Core MVC
+## Customizing mappings
 
-Controller actions can map results directly to MVC action results:
-
-```csharp
-[HttpGet("{id}")]
-public ActionResult<Account> Get(Guid id)
-{
-    Result<Account> result = service.Get(id);
-    return this.ToActionResult(result);
-}
-```
-
-Use `ToCreatedResult(result, location)` for successful create operations and
-`ToNoContentResult(result)` for successful commands.
-
-## Minimal APIs
-
-Minimal API handlers can return the provided `IResult` adapters:
-
-```csharp
-app.MapGet("/accounts/{id}", (Guid id) =>
-{
-    Result<Account> result = service.Get(id);
-    return result.ToHttpResult();
-});
-```
-
-Use `ToCreatedHttpResult(result, location)` and
-`ToNoContentHttpResult()` for create and command endpoints.
-
-## Customizing HTTP mappings
-
-The default mappings can be customized without replacing the mapper. Start with
-`HttpResultMappingPolicy.Default` and override only the application-specific
-rules:
+Start with `HttpResultMappingPolicy.Default` and override only application
+specific rules:
 
 ```csharp
 var policy = HttpResultMappingPolicy.Default with
@@ -112,24 +138,33 @@ var policy = HttpResultMappingPolicy.Default with
 return result.ToHttpResult(policy);
 ```
 
-The policy provides separate selectors for core `ErrorType` and
-`HttpErrorType` values, success status codes for ordinary, no-content, and
-created responses, and a failure-body factory. Calls that do not provide a
-policy retain the standard status codes and response bodies.
+The policy supports separate selectors for core `ErrorType` and
+`HttpErrorType`, success statuses for ordinary, no-content, and created
+responses, and a failure-body factory. Supplying a custom failure factory makes
+the application responsible for that response contract.
 
-`HttpError` extends the core package's `ErrorType.External` classification and
-adds HTTP-specific categories such as `TransportFailure`, `MalformedResponse`,
-and `UnexpectedStatusCode`. `HttpResponseMessage` responses can be converted
-back to `Result` values with `MapToResultAsync`. Upstream response text is kept
-in the technical `Error.Description`; by default it is not copied into
-`Error.UserMessage` or `Result.Message`:
+## Mapping inbound HTTP responses
+
+`HttpResponseMessage` can be converted to a typed or non-generic result:
 
 ```csharp
 var result = await response.MapToResultAsync<Account>(context);
 ```
 
-If an application deliberately proxies a vetted upstream message, opt in with
-an application-owned policy:
+Successful JSON bodies are deserialized with web-default
+`JsonSerializerOptions`. Non-success responses become `HttpError` values.
+`HttpError` retains the core package's `ErrorType.External` classification and
+adds HTTP-specific categories such as `TransportFailure`,
+`MalformedResponse`, and `UnexpectedStatusCode`.
+
+Response content is consumed. The default reader inspects at most 64 KiB;
+configure `HttpResponseMappingOptions.MaxResponseBodyBytes` for another limit.
+Use `MapToResultWithDeserializerAsync` when a successful payload should be
+streamed. Cancellation is propagated and is never converted to a failure.
+
+Upstream response text is kept in the technical `Error.Description`; it is not
+copied to `Error.UserMessage` by default. Applications that intentionally proxy
+a vetted upstream message can opt in:
 
 ```csharp
 var options = new HttpResponseMappingOptions
@@ -140,44 +175,30 @@ var options = new HttpResponseMappingOptions
 var result = await response.MapToResultAsync<Account>(context, options);
 ```
 
-Response content is consumed by the mapping methods. The default reader inspects at most
-64 KiB; configure `MaxResponseBodyBytes` for a different limit. Oversized success bodies become
-`MalformedResponse` failures, while oversized failure bodies use the status fallback message.
-Cancellation is propagated and is never converted into a failure result.
+Pass `JsonSerializerOptions` to control successful-body deserialization and
+`ErrorMessageExtractor` when an upstream service uses a different error schema.
+`HttpClient` request, DNS, connection, and timeout exceptions are not caught by
+the response mapper; map selected exceptions explicitly in the surrounding
+catch block with `MapTransportExceptionToResult`.
 
-For large successful payloads, provide a streaming deserializer instead of buffering the body:
+## Pagination
 
-```csharp
-var result = await response.MapToResultWithDeserializerAsync(
-    context,
-    (stream, cancellationToken) =>
-        JsonSerializer.DeserializeAsync<Account>(stream, cancellationToken: cancellationToken)
-            .AsTask());
-```
-
-`HttpClient` request, DNS, connection, timeout, and non-caller task-cancellation exceptions are
-not caught by the response mapper. In a catch block, map the selected transport exceptions
-explicitly:
+Normalize endpoint query values with an application-configured maximum:
 
 ```csharp
-catch (Exception exception) when (
-    exception is HttpRequestException or TimeoutException or TaskCanceledException)
-{
-    return exception.MapTransportExceptionToResult<Account>(context, cancellationToken);
-}
+var pagination = PaginationParameters.Normalize(page, pageSize, maxPageSize);
 ```
 
-Pass `JsonSerializerOptions` in `HttpResponseMappingOptions` to control successful-body
-deserialization. Use `ErrorMessageExtractor` when an upstream API has a different error schema;
-the default parser only recognizes common fields and keeps the configured body limit.
+Page numbers are at least 1 and page sizes are clamped between 1 and the
+provided maximum. A maximum below 1 throws `ArgumentOutOfRangeException`.
 
-`HttpError` factories keep technical descriptions separate from optional `UserMessage` values.
-Every built-in factory accepts an application-owned `userMessage` and `messageFactory`, matching
-the core package's localization model. `HttpError.Custom` likewise requires a technical
-description and only exposes a user message when explicitly supplied.
+## Versioning
 
-Install from NuGet:
+The package follows semantic versioning. Public response fields, error codes,
+and documented mapping defaults are compatibility-sensitive API. Breaking
+changes require a major version; new backward-compatible APIs and behavior
+use minor versions. Patch releases contain backward-compatible fixes.
 
-```bash
-dotnet add package Megaraz.ResultPattern.AspNetCore
-```
+## License
+
+This project is licensed under the [MIT License](LICENSE).
