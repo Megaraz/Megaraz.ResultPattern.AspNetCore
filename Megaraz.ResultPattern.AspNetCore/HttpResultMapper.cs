@@ -92,7 +92,7 @@ public static class HttpResultMapper
             var validationErrorItems = result.ValidationErrors
                 .Select(x => new ValidationErrorItem(x.FieldName, x.UserMessage))
                 .ToArray();
-            return new ValidationErrorResponseBody(result.Message, validationErrorItems);
+            return new ValidationErrorResponseBody(result.Message, primaryError.Code, validationErrorItems);
         }
 
         return new ErrorResponseBody(result.Message, primaryError.Code);
