@@ -1,4 +1,4 @@
 <Solution>
   <Project Path="Megaraz.ResultPattern.AspNetCore/Megaraz.ResultPattern.AspNetCore.csproj" />
-  <Project Path="UnitTests/UnitTests.csproj" />
+  <Project Path="UnitTests/UnitTests.csproj" Id="e013e482-2fd7-4f53-b296-863677d29cf1" />
 </Solution>
