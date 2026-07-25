@@ -140,6 +140,42 @@ var options = new HttpResponseMappingOptions
 var result = await response.MapToResultAsync<Account>(context, options);
 ```
 
+Response content is consumed by the mapping methods. The default reader inspects at most
+64 KiB; configure `MaxResponseBodyBytes` for a different limit. Oversized success bodies become
+`MalformedResponse` failures, while oversized failure bodies use the status fallback message.
+Cancellation is propagated and is never converted into a failure result.
+
+For large successful payloads, provide a streaming deserializer instead of buffering the body:
+
+```csharp
+var result = await response.MapToResultWithDeserializerAsync(
+    context,
+    (stream, cancellationToken) =>
+        JsonSerializer.DeserializeAsync<Account>(stream, cancellationToken: cancellationToken)
+            .AsTask());
+```
+
+`HttpClient` request, DNS, connection, timeout, and non-caller task-cancellation exceptions are
+not caught by the response mapper. In a catch block, map the selected transport exceptions
+explicitly:
+
+```csharp
+catch (Exception exception) when (
+    exception is HttpRequestException or TimeoutException or TaskCanceledException)
+{
+    return exception.MapTransportExceptionToResult<Account>(context, cancellationToken);
+}
+```
+
+Pass `JsonSerializerOptions` in `HttpResponseMappingOptions` to control successful-body
+deserialization. Use `ErrorMessageExtractor` when an upstream API has a different error schema;
+the default parser only recognizes common fields and keeps the configured body limit.
+
+`HttpError` factories keep technical descriptions separate from optional `UserMessage` values.
+Every built-in factory accepts an application-owned `userMessage` and `messageFactory`, matching
+the core package's localization model. `HttpError.Custom` likewise requires a technical
+description and only exposes a user message when explicitly supplied.
+
 Install from NuGet:
 
 ```bash

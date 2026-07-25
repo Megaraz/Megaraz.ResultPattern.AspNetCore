@@ -1,24 +1,25 @@
-﻿using System.Net;
+using System.Net;
+using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 
 namespace Megaraz.ResultPattern.AspNetCore;
 
-/// <summary>Converts HTTP responses to core result values.</summary>
+/// <summary>Converts HTTP responses and selected HTTP client exceptions to core result values.</summary>
 public static class HttpResponseToResultExtensions
 {
-    private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions DefaultJsonSerializerOptions =
+        new(JsonSerializerDefaults.Web);
 
     /// <summary>Maps a successful JSON response or an HTTP failure to a typed result.</summary>
-    public static async Task<Result<TValue>> MapToResultAsync<TValue>(
+    public static Task<Result<TValue>> MapToResultAsync<TValue>(
         this HttpResponseMessage? response,
         ErrorContext errorContext,
         CancellationToken ct = default)
-        where TValue : notnull
-    {
-        return await MapToResultAsync<TValue>(response, errorContext, HttpResponseMappingOptions.Default, ct);
-    }
+        where TValue : notnull =>
+        MapToResultAsync<TValue>(response, errorContext, HttpResponseMappingOptions.Default, ct);
 
-    /// <summary>Maps a response using explicit application-owned upstream message options.</summary>
+    /// <summary>Maps a response using configured serialization and upstream-message options.</summary>
     public static async Task<Result<TValue>> MapToResultAsync<TValue>(
         this HttpResponseMessage? response,
         ErrorContext errorContext,
@@ -27,17 +28,29 @@ public static class HttpResponseToResultExtensions
         where TValue : notnull
     {
         ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
 
         if (response is null)
             return Result<TValue>.Failure(HttpError.TransportFailure(errorContext));
 
         if (!response.IsSuccessStatusCode)
         {
-            var failureMessage = await GetFailureMessageAsync(response, ct);
-            return CreateHttpFailureResult<TValue>(response.StatusCode, errorContext, failureMessage, options);
+            var failureMessage = await GetFailureMessageAsync(response, options, ct);
+            return Result<TValue>.Failure(
+                CreateHttpFailureError(response.StatusCode, errorContext, failureMessage, options));
         }
 
-        var responseBody = await ReadResponseBodyAsync(response, ct);
+        string responseBody;
+        try
+        {
+            responseBody = await ReadResponseBodyAsync(response, options.MaxResponseBodyBytes, ct);
+        }
+        catch (ResponseBodyTooLargeException exception)
+        {
+            return Result<TValue>.Failure(HttpError.MalformedResponse(errorContext, exception,
+                "The external service returned a response body that was too large to inspect."));
+        }
+
         if (string.IsNullOrWhiteSpace(responseBody))
         {
             return Result<TValue>.Failure(HttpError.MalformedResponse(
@@ -51,43 +64,99 @@ public static class HttpResponseToResultExtensions
             return Result<TValue>.Failure(HttpError.MalformedResponse(
                 errorContext,
                 detail: $"The external service returned {(int)response.StatusCode}" +
-                $" ({response.StatusCode}) with unsupported content type '{response.Content.Headers.ContentType?.MediaType ?? "unknown"}'."));
+                $" ({response.StatusCode}) with unsupported content type '{response.Content?.Headers.ContentType?.MediaType ?? "unknown"}'."));
         }
 
         try
         {
-            var value = JsonSerializer.Deserialize<TValue>(responseBody, JsonSerializerOptions);
+            var value = JsonSerializer.Deserialize<TValue>(
+                responseBody,
+                options.JsonSerializerOptions ?? DefaultJsonSerializerOptions);
 
-            if (value is null)
-            {
-                return Result<TValue>.Failure(HttpError.MalformedResponse(
+            return value is null
+                ? Result<TValue>.Failure(HttpError.MalformedResponse(
                     errorContext,
                     detail: $"The external service returned {(int)response.StatusCode}" +
-                    $" ({response.StatusCode}) with an empty or invalid JSON body."));
-            }
-
-            return Result<TValue>.Success(value);
+                    $" ({response.StatusCode}) with an empty or invalid JSON body."))
+                : Result<TValue>.Success(value);
         }
         catch (JsonException exception)
         {
-            return Result<TValue>.Failure(HttpError.MalformedResponse(errorContext, exception, "The external service returned malformed JSON."));
+            return Result<TValue>.Failure(
+                HttpError.MalformedResponse(errorContext, exception, "The external service returned malformed JSON."));
         }
         catch (NotSupportedException exception)
         {
-            return Result<TValue>.Failure(HttpError.MalformedResponse(errorContext, exception, "The external service returned an unsupported JSON payload."));
+            return Result<TValue>.Failure(
+                HttpError.MalformedResponse(errorContext, exception, "The external service returned an unsupported JSON payload."));
+        }
+    }
+
+    /// <summary>
+    /// Maps a successful response with an application-owned streaming deserializer or an HTTP failure.
+    /// </summary>
+    /// <remarks>
+    /// The deserializer owns the response stream and must dispose it. The response content is consumed.
+    /// </remarks>
+    public static async Task<Result<TValue>> MapToResultWithDeserializerAsync<TValue>(
+        this HttpResponseMessage? response,
+        ErrorContext errorContext,
+        Func<Stream, CancellationToken, Task<TValue>> deserializeAsync,
+        HttpResponseMappingOptions? options = null,
+        CancellationToken ct = default)
+        where TValue : notnull
+    {
+        ArgumentNullException.ThrowIfNull(deserializeAsync);
+        options ??= HttpResponseMappingOptions.Default;
+        options.Validate();
+
+        if (response is null)
+            return Result<TValue>.Failure(HttpError.TransportFailure(errorContext));
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var failureMessage = await GetFailureMessageAsync(response, options, ct);
+            return Result<TValue>.Failure(
+                CreateHttpFailureError(response.StatusCode, errorContext, failureMessage, options));
+        }
+
+        if (!HasJsonContentType(response))
+        {
+            return Result<TValue>.Failure(HttpError.MalformedResponse(
+                errorContext,
+                detail: $"The external service returned {(int)response.StatusCode}" +
+                $" ({response.StatusCode}) with unsupported content type '{response.Content?.Headers.ContentType?.MediaType ?? "unknown"}'."));
+        }
+
+        if (response.Content is null)
+            return Result<TValue>.Failure(HttpError.MalformedResponse(errorContext,
+                detail: "The external service returned no response body."));
+
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        try
+        {
+            return Result<TValue>.Success(await deserializeAsync(stream, ct));
+        }
+        catch (JsonException exception)
+        {
+            return Result<TValue>.Failure(
+                HttpError.MalformedResponse(errorContext, exception, "The external service returned malformed JSON."));
+        }
+        catch (NotSupportedException exception)
+        {
+            return Result<TValue>.Failure(
+                HttpError.MalformedResponse(errorContext, exception, "The external service returned an unsupported JSON payload."));
         }
     }
 
     /// <summary>Maps a successful response or an HTTP failure to a non-generic result.</summary>
-    public static async Task<Result> MapToResultAsync(
+    public static Task<Result> MapToResultAsync(
         this HttpResponseMessage? response,
         ErrorContext errorContext,
-        CancellationToken ct = default)
-    {
-        return await MapToResultAsync(response, errorContext, HttpResponseMappingOptions.Default, ct);
-    }
+        CancellationToken ct = default) =>
+        MapToResultAsync(response, errorContext, HttpResponseMappingOptions.Default, ct);
 
-    /// <summary>Maps a response using explicit application-owned upstream message options.</summary>
+    /// <summary>Maps a response using configured upstream-message options.</summary>
     public static async Task<Result> MapToResultAsync(
         this HttpResponseMessage? response,
         ErrorContext errorContext,
@@ -95,6 +164,7 @@ public static class HttpResponseToResultExtensions
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
 
         if (response is null)
             return Result.Failure(HttpError.TransportFailure(errorContext));
@@ -102,93 +172,98 @@ public static class HttpResponseToResultExtensions
         if (response.IsSuccessStatusCode)
             return Result.Success();
 
-        var failureMessage = await GetFailureMessageAsync(response, ct);
-
-        return CreateHttpFailureResult(response.StatusCode, errorContext, failureMessage, options);
+        var failureMessage = await GetFailureMessageAsync(response, options, ct);
+        return Result.Failure(CreateHttpFailureError(response.StatusCode, errorContext, failureMessage, options));
     }
 
-    private static Result<TValue> CreateHttpFailureResult<TValue>(
-        HttpStatusCode statusCode,
+    /// <summary>
+    /// Converts an HTTP request or timeout exception into a transport failure result.
+    /// </summary>
+    /// <remarks>
+    /// Call this in the catch block around <see cref="HttpClient"/> calls. Caller cancellation is
+    /// never converted to a failure; pass the caller token so cancellation can be rethrown.
+    /// </remarks>
+    public static Result<TValue> MapTransportExceptionToResult<TValue>(
+        this Exception exception,
         ErrorContext errorContext,
-        string responseMessage,
-        HttpResponseMappingOptions options)
+        CancellationToken callerCancellationToken = default)
         where TValue : notnull
     {
-        return Result<TValue>.Failure(MapHttpError(statusCode, errorContext, responseMessage, options));
+        ArgumentNullException.ThrowIfNull(exception);
+        ArgumentNullException.ThrowIfNull(errorContext);
+
+        if (callerCancellationToken.IsCancellationRequested)
+            throw new OperationCanceledException(callerCancellationToken);
+
+        if (exception is not HttpRequestException
+            && exception is not TimeoutException
+            && exception is not TaskCanceledException)
+        {
+            throw new ArgumentException(
+                "Only HttpRequestException, TimeoutException, and non-caller TaskCanceledException can be mapped.",
+                nameof(exception));
+        }
+
+        return Result<TValue>.Failure(HttpError.TransportFailure(errorContext, exception));
     }
 
-    private static Result CreateHttpFailureResult(
+    /// <summary>Converts an HTTP request or timeout exception into a transport failure result.</summary>
+    public static Result MapTransportExceptionToResult(
+        this Exception exception,
+        ErrorContext errorContext,
+        CancellationToken callerCancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        ArgumentNullException.ThrowIfNull(errorContext);
+
+        if (callerCancellationToken.IsCancellationRequested)
+            throw new OperationCanceledException(callerCancellationToken);
+
+        if (exception is not HttpRequestException
+            && exception is not TimeoutException
+            && exception is not TaskCanceledException)
+        {
+            throw new ArgumentException(
+                "Only HttpRequestException, TimeoutException, and non-caller TaskCanceledException can be mapped.",
+                nameof(exception));
+        }
+
+        return Result.Failure(HttpError.TransportFailure(errorContext, exception));
+    }
+
+    private static HttpError CreateHttpFailureError(
         HttpStatusCode statusCode,
         ErrorContext errorContext,
         string responseMessage,
-        HttpResponseMappingOptions options)
-    {
-        return Result.Failure(MapHttpError(statusCode, errorContext, responseMessage, options));
-    }
-
-    private static HttpError MapHttpError(
-        HttpStatusCode statusCode,
-        ErrorContext errorContext,
-        string responseMessage,
-        HttpResponseMappingOptions options)
-    {
-        return HttpError.FromResponse(
+        HttpResponseMappingOptions options) =>
+        HttpError.FromResponse(
             errorContext,
             statusCode,
             responseMessage,
             options.UserMessageFactory?.Invoke(responseMessage));
-    }
 
-    private static async Task<string> GetFailureMessageAsync(HttpResponseMessage response, CancellationToken ct)
+    private static async Task<string> GetFailureMessageAsync(
+        HttpResponseMessage response,
+        HttpResponseMappingOptions options,
+        CancellationToken ct)
     {
-        var responseMessage = await TryGetResponseMessageAsync(response, ct);
+        string? responseMessage = null;
+        try
+        {
+            var responseBody = await ReadResponseBodyAsync(response, options.MaxResponseBodyBytes, ct);
+            responseMessage = options.ErrorMessageExtractor?.Invoke(responseBody)
+                ?? ExtractDefaultResponseMessage(responseBody);
+        }
+        catch (ResponseBodyTooLargeException)
+        {
+            // Do not inspect or expose an oversized upstream body.
+        }
+
         return BuildFailureMessage(responseMessage, GetDefaultFailureMessage(response.StatusCode), response.ReasonPhrase);
     }
 
-    private static string BuildFailureMessage(string? responseMessage, string defaultMessage, string? reasonPhrase)
+    private static string? ExtractDefaultResponseMessage(string responseBody)
     {
-        return FirstNonEmpty(responseMessage, defaultMessage, reasonPhrase, "An error occurred while calling the external service.");
-    }
-
-    private static string GetDefaultFailureMessage(HttpStatusCode statusCode)
-    {
-        return statusCode switch
-        {
-            HttpStatusCode.BadRequest => "The external service rejected the request.",
-            HttpStatusCode.Unauthorized => "The external service requires authentication.",
-            HttpStatusCode.Forbidden => "The external service refused the request.",
-            HttpStatusCode.NotFound => "The requested resource was not found in the external service.",
-            HttpStatusCode.Conflict => "The external service reported a conflict.",
-            HttpStatusCode.UnprocessableContent => "The external service could not process the request.",
-            HttpStatusCode.InternalServerError => "The external service encountered an internal server error.",
-            HttpStatusCode.TooManyRequests => "The external service has rate-limited this request.",
-            _ => $"The external service returned an unexpected HTTP status code {(int)statusCode} ({statusCode}).",
-        };
-    }
-
-    // Returns true when the Content-Type header is absent (null or whitespace) as well as when it
-    // contains "json". This leniency is intentional: some real-world external APIs (e.g. RAWG)
-    // return valid JSON bodies without setting a Content-Type header on success responses.
-    // Callers that need strict enforcement should inspect the header themselves before mapping.
-    private static bool HasJsonContentType(HttpResponseMessage response)
-    {
-        var mediaType = response.Content?.Headers.ContentType?.MediaType;
-
-        return string.IsNullOrWhiteSpace(mediaType)
-            || mediaType.Contains("json", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static async Task<string?> ReadResponseBodyAsync(HttpResponseMessage response, CancellationToken ct)
-    {
-        if (response.Content is null)
-            return null;
-
-        return await response.Content.ReadAsStringAsync(ct);
-    }
-
-    private static async Task<string?> TryGetResponseMessageAsync(HttpResponseMessage response, CancellationToken ct)
-    {
-        var responseBody = await ReadResponseBodyAsync(response, ct);
         if (string.IsNullOrWhiteSpace(responseBody))
             return null;
 
@@ -217,6 +292,7 @@ public static class HttpResponseToResultExtensions
         }
         catch (JsonException)
         {
+            return responseBody.Trim();
         }
 
         return responseBody.Trim();
@@ -226,35 +302,104 @@ public static class HttpResponseToResultExtensions
     {
         if (errorsElement.ValueKind == JsonValueKind.Array)
         {
-            var errors = errorsElement
-                .EnumerateArray()
+            var errors = errorsElement.EnumerateArray()
                 .Where(static value => value.ValueKind == JsonValueKind.String)
                 .Select(static value => value.GetString())
                 .Where(static value => !string.IsNullOrWhiteSpace(value));
-
-            return string.Join(" ", errors!);
+            return string.Join(" ", errors);
         }
 
         if (errorsElement.ValueKind == JsonValueKind.Object)
         {
-            var errors = errorsElement
-                .EnumerateObject()
+            var errors = errorsElement.EnumerateObject()
                 .SelectMany(static property => property.Value.ValueKind == JsonValueKind.Array
                     ? property.Value.EnumerateArray()
                         .Where(static value => value.ValueKind == JsonValueKind.String)
                         .Select(static value => value.GetString())
                     : Array.Empty<string?>())
                 .Where(static value => !string.IsNullOrWhiteSpace(value));
-
-            return string.Join(" ", errors!);
+            return string.Join(" ", errors);
         }
 
         return null;
     }
 
-    private static string FirstNonEmpty(params string?[] values)
+    private static string BuildFailureMessage(string? responseMessage, string defaultMessage, string? reasonPhrase) =>
+        FirstNonEmpty(responseMessage, defaultMessage, reasonPhrase,
+            "An error occurred while calling the external service.");
+
+    private static string GetDefaultFailureMessage(HttpStatusCode statusCode) =>
+        statusCode switch
+        {
+            HttpStatusCode.BadRequest => "The external service rejected the request.",
+            HttpStatusCode.Unauthorized => "The external service requires authentication.",
+            HttpStatusCode.Forbidden => "The external service refused the request.",
+            HttpStatusCode.NotFound => "The requested resource was not found in the external service.",
+            HttpStatusCode.Conflict => "The external service reported a conflict.",
+            HttpStatusCode.UnprocessableContent => "The external service could not process the request.",
+            HttpStatusCode.InternalServerError => "The external service encountered an internal server error.",
+            HttpStatusCode.TooManyRequests => "The external service has rate-limited this request.",
+            _ => $"The external service returned an unexpected HTTP status code {(int)statusCode} ({statusCode}).",
+        };
+
+    private static bool HasJsonContentType(HttpResponseMessage response)
     {
-        return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
-            ?? "An error occurred while calling the external service.";
+        var mediaType = response.Content?.Headers.ContentType?.MediaType;
+        return string.IsNullOrWhiteSpace(mediaType)
+            || mediaType.Contains("json", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static async Task<string> ReadResponseBodyAsync(
+        HttpResponseMessage response,
+        int maxBytes,
+        CancellationToken ct)
+    {
+        if (response.Content is null)
+            return string.Empty;
+
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var memory = new MemoryStream();
+        var buffer = new byte[8192];
+        var totalBytes = 0;
+
+        while (true)
+        {
+            var bytesToRead = Math.Min(buffer.Length, maxBytes - totalBytes + 1);
+            var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, bytesToRead), ct);
+            if (bytesRead == 0)
+                break;
+
+            totalBytes += bytesRead;
+            if (totalBytes > maxBytes)
+                throw new ResponseBodyTooLargeException(maxBytes);
+
+            memory.Write(buffer, 0, bytesRead);
+        }
+
+        var encoding = GetResponseEncoding(response);
+        return encoding.GetString(memory.ToArray());
+    }
+
+    private static Encoding GetResponseEncoding(HttpResponseMessage response)
+    {
+        var charset = response.Content?.Headers.ContentType?.CharSet;
+        if (string.IsNullOrWhiteSpace(charset))
+            return Encoding.UTF8;
+
+        try
+        {
+            return Encoding.GetEncoding(charset);
+        }
+        catch (ArgumentException)
+        {
+            return Encoding.UTF8;
+        }
+    }
+
+    private static string FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
+        ?? "An error occurred while calling the external service.";
+
+    private sealed class ResponseBodyTooLargeException(int maxBytes)
+        : InvalidOperationException($"The response body exceeds the configured {maxBytes}-byte limit.");
 }

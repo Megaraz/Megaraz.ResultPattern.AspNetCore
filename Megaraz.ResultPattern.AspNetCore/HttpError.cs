@@ -62,103 +62,148 @@ public sealed record HttpError : Error
         return statusCode switch
         {
             HttpStatusCode.NotFound => CreateWithDetails(errorContext, "NotFound", HttpErrorType.NotFound,
-                details ?? "The external service returned not found.", "Not Found", userMessage),
+                details ?? "The external service returned not found.", userMessage),
             HttpStatusCode.BadRequest => CreateWithDetails(errorContext, "BadRequest", HttpErrorType.BadRequest,
-                details ?? "The external service rejected the request.", "Bad Request", userMessage),
+                details ?? "The external service rejected the request.", userMessage),
             HttpStatusCode.UnprocessableContent => CreateWithDetails(errorContext, "UnprocessableContent",
                 HttpErrorType.UnprocessableContent, details ?? "The external service could not process the request.",
-                "Unprocessable Content", userMessage),
+                userMessage),
             HttpStatusCode.Conflict => CreateWithDetails(errorContext, "Conflict", HttpErrorType.Conflict,
-                details ?? "The external service reported a conflict.", "Conflict", userMessage),
+                details ?? "The external service reported a conflict.", userMessage),
             HttpStatusCode.Unauthorized => CreateWithDetails(errorContext, "Unauthorized", HttpErrorType.Unauthorized,
-                details ?? "The external service requires authentication.", "Unauthorized", userMessage),
+                details ?? "The external service requires authentication.", userMessage),
             HttpStatusCode.Forbidden => CreateWithDetails(errorContext, "Forbidden", HttpErrorType.Forbidden,
-                details ?? "The external service refused the request.", "Forbidden", userMessage),
+                details ?? "The external service refused the request.", userMessage),
             HttpStatusCode.InternalServerError => CreateWithDetails(errorContext, "InternalServerError",
                 HttpErrorType.InternalServerError, details ?? "The external service encountered an internal server error.",
-                "Internal Server Error", userMessage),
+                userMessage),
             HttpStatusCode.TooManyRequests => CreateWithDetails(errorContext, "TooManyRequests",
                 HttpErrorType.TooManyRequests, details ?? "The external service has rate-limited this request.",
-                "Too Many Requests", userMessage),
+                userMessage),
             _ => CreateWithDetails(
                 errorContext,
                 "UnexpectedStatusCode",
                 HttpErrorType.UnexpectedStatusCode,
                 details ?? $"The external service returned an unexpected HTTP status code {(int)statusCode} ({statusCode}).",
-                "Unexpected external service response",
                 userMessage)
         };
     }
 
     /// <summary>Creates a caller-defined HTTP error.</summary>
-    public static HttpError Custom(ErrorContext errorContext, string customDescriptionSuffix) =>
-        Create(errorContext, "Custom", HttpErrorType.Custom, customDescriptionSuffix, customDescriptionSuffix);
+    public static HttpError Custom(
+        ErrorContext errorContext,
+        string customDescriptionSuffix,
+        string? userMessage = null,
+        Func<ErrorContext, string>? messageFactory = null,
+        Exception? exception = null) =>
+        Create(errorContext, "Custom", HttpErrorType.Custom, customDescriptionSuffix, userMessage,
+            messageFactory, exception);
 
     /// <summary>Creates an error for a transport failure.</summary>
-    public static HttpError TransportFailure(ErrorContext errorContext, Exception? exception = null) =>
+    public static HttpError TransportFailure(
+        ErrorContext errorContext,
+        Exception? exception = null,
+        string? userMessage = null,
+        Func<ErrorContext, string>? messageFactory = null) =>
         Create(errorContext, "TransportFailure", HttpErrorType.TransportFailure,
-            "The external service could not be reached.", "Transport failure", exception);
+            "The external service could not be reached.", userMessage, messageFactory, exception);
 
     /// <summary>Creates an error for an HTTP 429 response.</summary>
-    public static HttpError TooManyRequests(ErrorContext errorContext, string? callerMessage = null) =>
+    public static HttpError TooManyRequests(
+        ErrorContext errorContext,
+        string? userMessage = null,
+        Func<ErrorContext, string>? messageFactory = null) =>
         CreateWithDefaultMessage(errorContext, "TooManyRequests", HttpErrorType.TooManyRequests,
-            "Too Many Requests", callerMessage);
+            "Too Many Requests", userMessage, messageFactory);
 
     /// <summary>Creates an error for an invalid response body.</summary>
     public static HttpError MalformedResponse(
         ErrorContext errorContext,
         Exception? exception = null,
-        string? detail = null) =>
+        string? detail = null,
+        string? userMessage = null,
+        Func<ErrorContext, string>? messageFactory = null) =>
         Create(errorContext, "MalformedResponse", HttpErrorType.MalformedResponse,
             detail ?? "The external service returned a malformed or unexpected response.",
-            "The external service returned a malformed or unexpected response.", exception);
+            userMessage, messageFactory, exception);
 
     /// <summary>Creates an error for an unexpected HTTP status code.</summary>
-    public static HttpError UnexpectedStatusCode(ErrorContext errorContext, HttpStatusCode statusCode)
+    public static HttpError UnexpectedStatusCode(
+        ErrorContext errorContext,
+        HttpStatusCode statusCode,
+        string? userMessage = null,
+        Func<ErrorContext, string>? messageFactory = null)
     {
         var message = $"The external service returned an unexpected HTTP status code {(int)statusCode} ({statusCode}).";
-        return Create(errorContext, "UnexpectedStatusCode", HttpErrorType.UnexpectedStatusCode, message, message);
+        return Create(errorContext, "UnexpectedStatusCode", HttpErrorType.UnexpectedStatusCode, message,
+            userMessage, messageFactory);
     }
 
     /// <summary>Creates an error for an HTTP 422 response.</summary>
-    public static HttpError UnprocessableContent(ErrorContext errorContext, string? callerMessage = null) =>
+    public static HttpError UnprocessableContent(
+        ErrorContext errorContext,
+        string? userMessage = null,
+        Func<ErrorContext, string>? messageFactory = null) =>
         CreateWithDefaultMessage(errorContext, "UnprocessableContent", HttpErrorType.UnprocessableContent,
-            "Unprocessable Content", callerMessage);
+            "Unprocessable Content", userMessage, messageFactory);
 
     /// <summary>Creates an error for an HTTP 400 response.</summary>
-    public static HttpError BadRequest(ErrorContext errorContext, string? callerMessage = null) =>
-        CreateWithDefaultMessage(errorContext, "BadRequest", HttpErrorType.BadRequest, "Bad Request", callerMessage);
+    public static HttpError BadRequest(
+        ErrorContext errorContext,
+        string? userMessage = null,
+        Func<ErrorContext, string>? messageFactory = null) =>
+        CreateWithDefaultMessage(errorContext, "BadRequest", HttpErrorType.BadRequest, "Bad Request",
+            userMessage, messageFactory);
 
     /// <summary>Creates an error for an HTTP 401 response.</summary>
-    public static HttpError UnauthorizedAccess(ErrorContext errorContext, string? callerMessage = null) =>
-        CreateWithDefaultMessage(errorContext, "Unauthorized", HttpErrorType.Unauthorized, "Unauthorized", callerMessage);
+    public static HttpError UnauthorizedAccess(
+        ErrorContext errorContext,
+        string? userMessage = null,
+        Func<ErrorContext, string>? messageFactory = null) =>
+        CreateWithDefaultMessage(errorContext, "Unauthorized", HttpErrorType.Unauthorized, "Unauthorized",
+            userMessage, messageFactory);
 
     /// <summary>Creates an error for an HTTP 403 response.</summary>
-    public static HttpError Forbidden(ErrorContext errorContext, string? callerMessage = null) =>
-        CreateWithDefaultMessage(errorContext, "Forbidden", HttpErrorType.Forbidden, "Forbidden", callerMessage);
+    public static new HttpError Forbidden(
+        ErrorContext errorContext,
+        string? userMessage = null,
+        Func<ErrorContext, string>? messageFactory = null) =>
+        CreateWithDefaultMessage(errorContext, "Forbidden", HttpErrorType.Forbidden, "Forbidden",
+            userMessage, messageFactory);
 
     /// <summary>Creates an error for an HTTP 404 response.</summary>
-    public static HttpError NotFound(ErrorContext errorContext, string? callerMessage = null) =>
-        CreateWithDefaultMessage(errorContext, "NotFound", HttpErrorType.NotFound, "Not Found", callerMessage);
+    public static new HttpError NotFound(
+        ErrorContext errorContext,
+        string? userMessage = null,
+        Func<ErrorContext, string>? messageFactory = null) =>
+        CreateWithDefaultMessage(errorContext, "NotFound", HttpErrorType.NotFound, "Not Found",
+            userMessage, messageFactory);
 
     /// <summary>Creates an error for an HTTP 409 response.</summary>
-    public static HttpError Conflict(ErrorContext errorContext, string? callerMessage = null) =>
-        CreateWithDefaultMessage(errorContext, "Conflict", HttpErrorType.Conflict, "Conflict", callerMessage);
+    public static new HttpError Conflict(
+        ErrorContext errorContext,
+        string? userMessage = null,
+        Func<ErrorContext, string>? messageFactory = null) =>
+        CreateWithDefaultMessage(errorContext, "Conflict", HttpErrorType.Conflict, "Conflict",
+            userMessage, messageFactory);
 
     /// <summary>Creates an error for an HTTP 500 response.</summary>
-    public static HttpError InternalServerError(ErrorContext errorContext, string? callerMessage = null) =>
+    public static HttpError InternalServerError(
+        ErrorContext errorContext,
+        string? userMessage = null,
+        Func<ErrorContext, string>? messageFactory = null) =>
         CreateWithDefaultMessage(errorContext, "InternalServerError", HttpErrorType.InternalServerError,
-            "Internal Server Error", callerMessage);
+            "Internal Server Error", userMessage, messageFactory);
 
     private static HttpError CreateWithDefaultMessage(
         ErrorContext context,
         string reason,
         HttpErrorType type,
         string defaultMessage,
-        string? callerMessage)
+        string? userMessage,
+        Func<ErrorContext, string>? messageFactory)
     {
-        var message = string.IsNullOrWhiteSpace(callerMessage) ? defaultMessage : callerMessage;
-        return Create(context, reason, type, message, message);
+        return Create(context, reason, type, defaultMessage, userMessage, messageFactory);
     }
 
     private static HttpError CreateWithDetails(
@@ -166,10 +211,9 @@ public sealed record HttpError : Error
         string reason,
         HttpErrorType type,
         string description,
-        string defaultUserMessage,
         string? userMessage)
     {
-        return Create(context, reason, type, description, userMessage ?? defaultUserMessage);
+        return Create(context, reason, type, description, userMessage ?? string.Empty);
     }
 
     private static HttpError Create(
@@ -177,12 +221,16 @@ public sealed record HttpError : Error
         string reason,
         HttpErrorType type,
         string description,
-        string userMessage,
+        string? userMessage,
+        Func<ErrorContext, string>? messageFactory = null,
         Exception? exception = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         var code = ErrorCode.For(context, reason);
         var formattedDescription = $"{context.EntityName}: {description}";
-        return new HttpError(code.Code, formattedDescription, type, userMessage, exception);
+        var resolvedDescription = messageFactory is null ? formattedDescription : messageFactory(context);
+        if (string.IsNullOrWhiteSpace(resolvedDescription))
+            throw new ArgumentException("The message factory must return a non-blank message.", nameof(messageFactory));
+        return new HttpError(code.Code, resolvedDescription, type, userMessage ?? string.Empty, exception);
     }
 }
