@@ -1,0 +1,1 @@
+# Megaraz.ResultPattern.AspNetCore
