@@ -146,6 +146,44 @@ public class HttpResponseToResultTests
         Assert.Equal("Ada", result.Value.DisplayName);
     }
 
+    [Fact]
+    public async Task RejectsOversizedStreamingResponse()
+    {
+        using var response = TestData.Response(HttpStatusCode.OK, "{" + new string(' ', 32) + "}");
+        var options = new HttpResponseMappingOptions { MaxResponseBodyBytes = 16 };
+
+        var result = await response.MapToResultWithDeserializerAsync(
+            TestData.Context,
+            async (stream, ct) =>
+            {
+                await stream.CopyToAsync(Stream.Null, ct);
+                return new SuccessDto();
+            },
+            options);
+
+        var error = Assert.IsType<HttpError>(result.PrimaryError);
+        Assert.Equal(HttpErrorType.MalformedResponse, error.HttpErrorType);
+        Assert.Contains("too large", error.Description);
+    }
+
+    [Fact]
+    public async Task StreamingDeserializerPreservesCancellation()
+    {
+        using var response = TestData.Response(HttpStatusCode.OK, "{}");
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            response.MapToResultWithDeserializerAsync(
+                TestData.Context,
+                (_, ct) =>
+                {
+                    ct.ThrowIfCancellationRequested();
+                    return Task.FromResult(new SuccessDto());
+                },
+                ct: cts.Token));
+    }
+
     [Theory]
     [InlineData(typeof(HttpRequestException))]
     [InlineData(typeof(TimeoutException))]

@@ -105,7 +105,8 @@ public static class HttpResponseToResultExtensions
     /// Maps a successful response with an application-owned streaming deserializer or an HTTP failure.
     /// </summary>
     /// <remarks>
-    /// The deserializer owns the response stream and must dispose it. The response content is consumed.
+    /// The deserializer consumes a size-limited response stream. The response content is consumed and
+    /// disposed when this method completes.
     /// </remarks>
     /// <param name="response">The response to consume, or <see langword="null"/> for a transport failure.</param>
     /// <param name="errorContext">The operation and entity context for generated errors.</param>
@@ -148,9 +149,15 @@ public static class HttpResponseToResultExtensions
                 detail: "The external service returned no response body."));
 
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        await using var limitedStream = new ResponseBodyLimitStream(stream, options.MaxResponseBodyBytes);
         try
         {
-            return Result<TValue>.Success(await deserializeAsync(stream, ct));
+            return Result<TValue>.Success(await deserializeAsync(limitedStream, ct));
+        }
+        catch (ResponseBodyTooLargeException exception)
+        {
+            return Result<TValue>.Failure(HttpError.MalformedResponse(errorContext, exception,
+                "The external service returned a response body that was too large to inspect."));
         }
         catch (JsonException exception)
         {
@@ -434,4 +441,59 @@ public static class HttpResponseToResultExtensions
 
     private sealed class ResponseBodyTooLargeException(int maxBytes)
         : InvalidOperationException($"The response body exceeds the configured {maxBytes}-byte limit.");
+
+    private sealed class ResponseBodyLimitStream(Stream innerStream, int maxBytes) : Stream
+    {
+        private int bytesRead;
+
+        public override bool CanRead => innerStream.CanRead;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() => throw new NotSupportedException();
+        public override Task FlushAsync(CancellationToken cancellationToken) =>
+            Task.FromException(new NotSupportedException());
+        public override int Read(byte[] buffer, int offset, int count) =>
+            CountBytes(innerStream.Read(buffer, offset, LimitReadCount(count)));
+        public override int Read(Span<byte> buffer) =>
+            CountBytes(innerStream.Read(buffer[..LimitReadCount(buffer.Length)]));
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default) =>
+            CountBytes(await innerStream.ReadAsync(buffer[..LimitReadCount(buffer.Length)], cancellationToken));
+        public override async Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken) =>
+            CountBytes(await innerStream.ReadAsync(buffer, offset, LimitReadCount(count), cancellationToken));
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            // The caller owns the underlying stream.
+        }
+
+        public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        private int LimitReadCount(int requestedCount) =>
+            Math.Min(requestedCount, maxBytes - bytesRead + 1);
+
+        private int CountBytes(int count)
+        {
+            bytesRead += count;
+            if (bytesRead > maxBytes)
+                throw new ResponseBodyTooLargeException(maxBytes);
+
+            return count;
+        }
+    }
 }
