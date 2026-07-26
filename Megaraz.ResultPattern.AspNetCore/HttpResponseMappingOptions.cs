@@ -19,11 +19,11 @@ public sealed record HttpResponseMappingOptions
     public JsonSerializerOptions? JsonSerializerOptions { get; init; }
 
     /// <summary>
-    /// Gets the maximum number of response-body bytes inspected by the default reader.
+    /// Gets the maximum number of response-body bytes read by the package.
     /// </summary>
     /// <remarks>
-    /// Response content is consumed while mapping. Use a streaming deserializer overload when
-    /// the payload must not be buffered.
+    /// Response content is consumed while mapping. Streaming deserializers do not buffer content,
+    /// but they are still limited to this number of bytes.
     /// </remarks>
     public int MaxResponseBodyBytes { get; init; } = 64 * 1024;
 

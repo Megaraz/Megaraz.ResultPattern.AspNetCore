@@ -157,10 +157,11 @@ Successful JSON bodies are deserialized with web-default
 adds HTTP-specific categories such as `TransportFailure`,
 `MalformedResponse`, and `UnexpectedStatusCode`.
 
-Response content is consumed. The default reader inspects at most 64 KiB;
-configure `HttpResponseMappingOptions.MaxResponseBodyBytes` for another limit.
-Use `MapToResultWithDeserializerAsync` when a successful payload should be
-streamed. Cancellation is propagated and is never converted to a failure.
+Response content is consumed. Both the default reader and streaming deserializer
+read at most 64 KiB by default; configure
+`HttpResponseMappingOptions.MaxResponseBodyBytes` for another limit. Use
+`MapToResultWithDeserializerAsync` when a successful payload should be streamed
+without buffering. Cancellation is propagated and is never converted to a failure.
 
 Upstream response text is kept in the technical `Error.Description`; it is not
 copied to `Error.UserMessage` by default. Applications that intentionally proxy

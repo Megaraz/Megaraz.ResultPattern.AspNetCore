@@ -100,6 +100,22 @@ public class HttpResultMapperTests
     }
 
     [Fact]
+    public void DoesNotExposeCustomValidationTechnicalDescriptionByDefault()
+    {
+        const string technicalDescription = "The upstream database rejected constraint 23505.";
+        var error = ValidationError.Custom(TestData.Context, technicalDescription);
+        var result = Result.ValidationFailure([error]);
+
+        var body = Assert.IsType<ValidationErrorResponseBody>(
+            HttpResultMapper.ToHttpResponse(result).Body);
+
+        Assert.Empty(body.Message);
+        Assert.Empty(body.ValidationErrors[0].Message);
+        Assert.DoesNotContain(technicalDescription, body.Message);
+        Assert.DoesNotContain(technicalDescription, body.ValidationErrors[0].Message);
+    }
+
+    [Fact]
     public void AppliesCustomPolicy()
     {
         var policy = HttpResultMappingPolicy.Default with
