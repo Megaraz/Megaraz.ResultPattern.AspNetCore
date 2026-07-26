@@ -25,7 +25,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
-    <PackageReference Include="Megaraz.ResultPattern" Version="0.2.0" />
+    <PackageReference Include="Megaraz.ResultPattern" Version="0.2.2" />
   </ItemGroup>
 
   <ItemGroup>
