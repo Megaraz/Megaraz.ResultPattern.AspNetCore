@@ -79,6 +79,16 @@ public ActionResult<Account> Create(CreateAccount request)
 }
 ```
 
+When an MVC controller has a route for the created resource, use the
+route-aware overload to produce a `CreatedAtActionResult`:
+
+```csharp
+return this.ToCreatedResult(
+    result,
+    nameof(GetAccountById),
+    account => new { id = account.Id });
+```
+
 ## Default response contract
 
 Failure responses use immutable DTOs with camel-case JSON names. Codes are

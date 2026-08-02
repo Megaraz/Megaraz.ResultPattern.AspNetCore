@@ -77,6 +77,42 @@ public static class AspNetCoreResultExtensions
         return controller.ToTypedActionResult<TValue>(response);
     }
 
+    /// <summary>
+    /// Maps a typed result to a created response using <see cref="ControllerBase.CreatedAtAction(string, object, object)"/>
+    /// on success.
+    /// </summary>
+    /// <param name="controller">The MVC controller creating the response.</param>
+    /// <param name="result">The result to map.</param>
+    /// <param name="actionName">The action used to generate the created resource's location.</param>
+    /// <param name="routeValuesFactory">Creates route values from the successful result value.</param>
+    /// <param name="policy">The HTTP mapping policy, or <see langword="null"/> for the default policy.</param>
+    /// <returns>An MVC action result.</returns>
+    public static ActionResult<TValue> ToCreatedResult<TValue>(
+        this ControllerBase controller,
+        Result<TValue> result,
+        string actionName,
+        Func<TValue, object> routeValuesFactory,
+        HttpResultMappingPolicy? policy = null)
+        where TValue : notnull
+    {
+        ArgumentNullException.ThrowIfNull(controller);
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actionName);
+        ArgumentNullException.ThrowIfNull(routeValuesFactory);
+
+        if (result.IsFailure)
+            return controller.ToTypedActionResult<TValue>(HttpResultMapper.ToHttpResponse(result, policy));
+
+        var response = HttpResultMapper.ToCreatedResponse(result, policy: policy);
+        var createdResult = controller.CreatedAtAction(
+            actionName,
+            routeValuesFactory(result.Value),
+            result.Value);
+        createdResult.StatusCode = response.StatusCode;
+
+        return createdResult;
+    }
+
     private static ActionResult<TValue> ToTypedActionResult<TValue>(
         this ControllerBase controller,
         MappedHttpResponse response)
