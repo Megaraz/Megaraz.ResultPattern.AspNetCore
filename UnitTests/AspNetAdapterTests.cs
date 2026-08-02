@@ -55,13 +55,41 @@ public class AspNetAdapterTests
 
         var ok = controller.ToActionResult(Result<int>.Success(42));
         var created = controller.ToCreatedResult(Result<string>.Success("new"), "/items/1");
+        var createdAtAction = controller.ToCreatedResult(
+            Result<int>.Success(42),
+            "GetById",
+            value => new { id = value });
         var noContent = controller.ToNoContentResult(Result.Success());
         var failure = controller.ToActionResult(Result.Failure(Error.NotFound(TestData.Context)));
 
         Assert.IsType<OkObjectResult>(ok.Result);
         Assert.IsType<CreatedResult>(created.Result);
+        var createdAtActionResult = Assert.IsType<CreatedAtActionResult>(createdAtAction.Result);
+        Assert.Equal("GetById", createdAtActionResult.ActionName);
+        Assert.Equal(42, createdAtActionResult.RouteValues!["id"]);
+        Assert.Equal(42, createdAtActionResult.Value);
         Assert.IsType<NoContentResult>(noContent);
         Assert.Equal(404, Assert.IsType<ObjectResult>(failure).StatusCode);
+    }
+
+    [Fact]
+    public void MvcCreatedAtActionAdapterMapsFailureAndAppliesCreatedStatusPolicy()
+    {
+        var controller = new TestController();
+        var policy = HttpResultMappingPolicy.Default with { CreatedStatusCode = 202 };
+
+        var created = controller.ToCreatedResult(
+            Result<string>.Success("new"),
+            "GetById",
+            _ => new { id = 42 },
+            policy);
+        var failure = controller.ToCreatedResult(
+            Result<string>.Failure(Error.NotFound(TestData.Context)),
+            "GetById",
+            _ => throw new InvalidOperationException("Route values must not be created for failures."));
+
+        Assert.Equal(202, Assert.IsType<CreatedAtActionResult>(created.Result).StatusCode);
+        Assert.Equal(404, Assert.IsType<ObjectResult>(failure.Result).StatusCode);
     }
 
     [Fact]
@@ -72,6 +100,14 @@ public class AspNetAdapterTests
         Assert.Throws<ArgumentNullException>(() => controller.ToActionResult((Result)null!));
         Assert.Throws<ArgumentNullException>(() => controller.ToActionResult((Result<string>)null!));
         Assert.Throws<ArgumentNullException>(() => ((ControllerBase)null!).ToActionResult(Result.Success()));
+        Assert.Throws<ArgumentNullException>(() => controller.ToCreatedResult(
+            Result<string>.Success("new"),
+            "GetById",
+            (Func<string, object>)null!));
+        Assert.Throws<ArgumentException>(() => controller.ToCreatedResult(
+            Result<string>.Success("new"),
+            string.Empty,
+            _ => new { }));
     }
 
     private static DefaultHttpContext NewContext()
